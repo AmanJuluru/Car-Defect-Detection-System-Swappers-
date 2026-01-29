@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+ultralytics
+firebase-admin
+python-multipart
+opencv-python-headless
+numpy
+pydantic
+python-dotenv
+aiofiles

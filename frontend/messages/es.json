@@ -1,0 +1,24 @@
+{
+    "Dashboard": {
+        "title": "Panel de Control",
+        "uploadImage": "Subir Imagen",
+        "liveCamera": "Cámara en Vivo",
+        "defectDistribution": "Distribución de Defectos",
+        "recentActivity": "Actividad Reciente"
+    },
+    "Upload": {
+        "title": "Subir Multimedia",
+        "description": "Sube imágenes o videos para detectar defectos en el coche",
+        "analyze": "Analizar Multimedia",
+        "dragDrop": "Haz clic para subir o arrastra y suelta"
+    },
+    "Navigation": {
+        "home": "Inicio",
+        "dashboard": "Panel de Control",
+        "profile": "Perfil",
+        "admin": "Admin",
+        "upload": "Subir",
+        "camera": "Detección en Vivo",
+        "history": "Historial"
+    }
+}

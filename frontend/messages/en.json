@@ -1,0 +1,24 @@
+{
+    "Dashboard": {
+        "title": "Dashboard",
+        "uploadImage": "Upload Image",
+        "liveCamera": "Live Camera",
+        "defectDistribution": "Defect Distribution",
+        "recentActivity": "Recent Activity"
+    },
+    "Upload": {
+        "title": "Upload Media",
+        "description": "Upload images or video to detect car defects",
+        "analyze": "Analyze Media",
+        "dragDrop": "Click to upload or drag and drop"
+    },
+    "Navigation": {
+        "home": "Home",
+        "dashboard": "Dashboard",
+        "profile": "Profile",
+        "admin": "Admin",
+        "upload": "Upload",
+        "camera": "Live Detection",
+        "history": "History"
+    }
+}

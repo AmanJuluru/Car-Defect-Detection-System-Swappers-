@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+backend/venv/
+backend/.venv/
+backend/env/
+
+# Python
+backend/__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+!*.example
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Firebase & Secrets
+backend/serviceAccountKey.json
+*.pem
+*.key
+*.log
+frontend/build_error.log
+backend/storage_check_result.txt
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# System
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
