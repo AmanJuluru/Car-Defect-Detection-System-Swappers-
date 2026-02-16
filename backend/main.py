@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import File, UploadFile, HTTPException, Form, Header, Query
-from detect import predict_image
+from detect import predict_image, analyze_image_content
 import uvicorn
 import json
 from firebase_config import db, storage
@@ -99,7 +99,35 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File must be an image")
     
     contents = await file.read()
+    
+    # Analyze image content
+    analysis = analyze_image_content(contents)
+    
+    # Run defect detection
     detections = predict_image(contents)
+    
+    has_defects = len(detections) > 0 and "error" not in detections
+
+    # Validation Logic:
+    # 1. If it's explicitly a vehicle, ALLOW.
+    # 2. If it's NOT a vehicle, check for forbidden objects (e.g., person).
+    #    - If forbidden object found -> REJECT (even if defects found, likely false positive).
+    #    - If NO forbidden object -> Check for defects (Close-up assumption).
+    #      - If defects found -> ALLOW.
+    #      - If no defects -> REJECT.
+    
+    if not analysis["is_vehicle"]:
+        if analysis["has_forbidden"]:
+             raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
+            )
+            
+        if not has_defects:
+            raise HTTPException(
+                status_code=400, 
+                detail="No vehicle detected. Please upload an image of an automobile (car, truck, bus, motorcycle)."
+            )
     
     if "error" in detections:
         raise HTTPException(status_code=500, detail=detections["error"])
@@ -128,6 +156,39 @@ async def save_scan(
 
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Read file content for validation
+    contents = await file.read()
+    
+    # Analyze image content
+    analysis = analyze_image_content(contents)
+    
+    # Check for defects in provided metadata
+    has_defects = False
+    if detections:
+        try:
+            det_list = json.loads(detections)
+            if isinstance(det_list, list) and len(det_list) > 0:
+                has_defects = True
+        except:
+            pass
+            
+    # Validation Logic (Same as /predict)
+    if not analysis["is_vehicle"]:
+        if analysis["has_forbidden"]:
+             raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
+            )
+            
+        if not has_defects:
+             raise HTTPException(
+                status_code=400, 
+                detail="No vehicle detected. Please upload an image of an automobile."
+            )
+
+    # Reset file cursor for later saving
+    await file.seek(0)
 
     authed_uid, authed_email = _require_user_from_bearer(authorization)
     final_user_id = authed_uid

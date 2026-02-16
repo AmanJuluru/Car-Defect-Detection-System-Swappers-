@@ -109,7 +109,9 @@ export default function UploadPage() {
             });
 
             if (!response.ok) {
-                throw new Error("Analysis failed");
+                const errorData = await response.json().catch(() => ({}));
+                const errorMessage = errorData.detail || "Analysis failed";
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();
