@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import Webcam from "react-webcam";
-import { Camera, RefreshCw, Save } from "lucide-react";
+import { Camera, RefreshCw, Save, Play, Square } from "lucide-react";
 import { auth } from "@/lib/firebase";
 
 export default function CameraPage() {
@@ -11,9 +11,12 @@ export default function CameraPage() {
     const [latestDetections, setLatestDetections] = useState<any[]>([]);
     const scanningIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Fixed video dimensions for consistent coordinate mapping
-    const videoWidth = 640;
-    const videoHeight = 480;
+    // 16:9 Aspect Ratio for better screen fit
+    const videoConstraints = {
+        facingMode: "environment",
+        width: 1280,
+        height: 720
+    };
 
     // Color mapping for defect types
     const getColorForClass = (cls: string) => {
@@ -47,41 +50,64 @@ export default function CameraPage() {
         formData.append("file", file);
 
         try {
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/predict`, {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+            const response = await fetch(`${apiUrl}/predict`, {
                 method: "POST",
                 body: formData,
             });
             if (response.ok) {
                 const data = await response.json();
-                setLatestDetections(data.detections);
+                setLatestDetections(data.detections || []);
+            } else {
+                console.warn("Frame inference failed:", response.status);
             }
         } catch (error) {
             console.error("Frame inference failed", error);
         }
     }, [webcamRef]);
 
-    const startScanning = () => {
-        setIsScanning(true);
-        // Run inference every 500ms
-        scanningIntervalRef.current = setInterval(captureFrame, 500);
-    };
-
-    const stopScanning = () => {
+    const stopScanning = useCallback(() => {
         setIsScanning(false);
         if (scanningIntervalRef.current) {
             clearInterval(scanningIntervalRef.current);
             scanningIntervalRef.current = null;
         }
         setLatestDetections([]);
-    };
+    }, []);
+
+    const startScanning = useCallback(() => {
+        setIsScanning(true);
+    }, []);
+
+    // Effect to manage the interval based on isScanning state
+    useEffect(() => {
+        if (isScanning && !scanningIntervalRef.current) {
+            // Give camera a moment to warm up, then start polling
+            const timeoutId = setTimeout(() => {
+                scanningIntervalRef.current = setInterval(captureFrame, 200);
+            }, 1000); // 1 second delay to allow camera to mount
+            return () => clearTimeout(timeoutId);
+        } else if (!isScanning && scanningIntervalRef.current) {
+            clearInterval(scanningIntervalRef.current);
+            scanningIntervalRef.current = null;
+        }
+
+        return () => {
+            if (scanningIntervalRef.current) {
+                clearInterval(scanningIntervalRef.current);
+                scanningIntervalRef.current = null;
+            }
+        };
+    }, [isScanning, captureFrame]);
+
 
     const capture = useCallback(() => {
         const imageSrc = webcamRef.current?.getScreenshot();
         if (imageSrc) {
             setImgSrc(imageSrc);
-            stopScanning(); // Stop live scan when capturing a still
+            stopScanning();
         }
-    }, [webcamRef]);
+    }, [webcamRef, stopScanning]);
 
     const retake = () => {
         setImgSrc(null);
@@ -104,7 +130,7 @@ export default function CameraPage() {
             }
             const idToken = await currentUser.getIdToken();
 
-            // First, run prediction to get detection results
+            // Run prediction on the captured still
             const predictFormData = new FormData();
             predictFormData.append("file", file);
 
@@ -120,12 +146,11 @@ export default function CameraPage() {
             const predictData = await predictRes.json();
             const detections = predictData.detections || [];
 
-            // Create a fresh blob/file for the save request (FormData file streams are consumed)
+            // Create a fresh blob/file for the save request
             const saveRes = await fetch(imgSrc);
             const saveBlob = await saveRes.blob();
             const saveFile = new File([saveBlob], "webcam_capture.jpg", { type: "image/jpeg" });
 
-            // Now save to history with a NEW FormData
             const saveFormData = new FormData();
             saveFormData.append("file", saveFile);
             saveFormData.append("detections", JSON.stringify(detections));
@@ -133,7 +158,8 @@ export default function CameraPage() {
             saveFormData.append("user_id", currentUser.uid);
             saveFormData.append("user_email", currentUser.email || "");
 
-            const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/save_scan`, {
+            const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
+            const saveResponse = await fetch(`${apiUrl}/save_scan`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${idToken}`,
@@ -143,60 +169,19 @@ export default function CameraPage() {
 
             if (!saveResponse.ok) {
                 const errorData = await saveResponse.json().catch(() => ({ detail: "Failed to save scan" }));
-
-                // Handle structured error responses
-                if (errorData.detail && typeof errorData.detail === 'object') {
-                    const errorMsg = errorData.detail.message || errorData.detail.error || "Failed to save scan";
-                    const technicalError = errorData.detail.technical_error || "";
-                    const activationUrl = errorData.detail.activation_url;
-                    const setupUrl = errorData.detail.setup_url;
-
-                    // Show detailed error in console for debugging
-                    console.error("Save error details:", errorData.detail);
-
-                    // Build error message with technical details in development
-                    const fullErrorMsg = process.env.NODE_ENV === 'development' && technicalError
-                        ? `${errorMsg}\n\nTechnical details: ${technicalError}`
-                        : errorMsg;
-
-                    // Check for setup URL (database creation)
-                    if (setupUrl) {
-                        const userConfirmed = confirm(
-                            `${fullErrorMsg}\n\nWould you like to open the database setup page?`
-                        );
-                        if (userConfirmed) {
-                            window.open(setupUrl, '_blank');
-                        }
-                    } else if (activationUrl) {
-                        const userConfirmed = confirm(
-                            `${fullErrorMsg}\n\nWould you like to open the activation page?`
-                        );
-                        if (userConfirmed) {
-                            window.open(activationUrl, '_blank');
-                        }
-                    } else {
-                        alert(fullErrorMsg);
-                    }
-                    throw new Error(errorMsg);
-                } else {
-                    const errorMsg = errorData.detail || "Failed to save scan";
-                    console.error("Save error:", errorData);
-                    alert(errorMsg);
-                    throw new Error(errorMsg);
-                }
+                throw new Error(errorData.detail?.message || "Failed to save scan");
             }
 
             const saveData = await saveResponse.json();
             console.log("Scan saved to history!", saveData);
 
-            // Dispatch custom event to refresh dashboard and history
             window.dispatchEvent(new CustomEvent('scanSaved'));
 
             alert("Scan saved to history!");
             setImgSrc(null);
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            // Error already shown in alert above, just log it
+            alert(e.message || "Failed to save scan");
         }
     };
 
@@ -220,114 +205,163 @@ export default function CameraPage() {
 
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Camera Feed */}
-                <div className="lg:col-span-2 bg-black rounded-xl overflow-hidden relative border border-border shadow-2xl flex items-center justify-center">
-                    {!imgSrc ? (
-                        <div className="relative w-full h-full flex items-center justify-center">
-                            <Webcam
-                                audio={false}
-                                ref={webcamRef}
-                                screenshotFormat="image/jpeg"
-                                videoConstraints={{
-                                    facingMode: "environment",
-                                    width: videoWidth,
-                                    height: videoHeight
-                                }}
-                                className="w-full h-full object-contain"
-                            />
+                <div className="lg:col-span-2 bg-black rounded-xl overflow-hidden relative border border-border shadow-2xl flex flex-col">
 
-                            {/* Live Overlays */}
-                            {isScanning && latestDetections.map((det, idx) => {
-                                // IMPORTANT: Coordinates from YOLO are typically relative to the image size sent.
-                                // We configured webcam to capture at specific resolution or need to know the ratio.
-                                // Assuming simplest case: webcam renders fully in container.
-                                // We use percentage logic again for best responsiveness.
-                                const [x1, y1, x2, y2] = det.bbox;
-                                // Note: We need to know the SOURCE image dimensions used for prediction. 
-                                // Webcam screenshot matches videoConstraints usually.
-                                const left = (x1 / videoWidth) * 100;
-                                const top = (y1 / videoHeight) * 100;
-                                const width = ((x2 - x1) / videoWidth) * 100;
-                                const height = ((y2 - y1) / videoHeight) * 100;
-                                const color = getColorForClass(det.class);
-
-                                return (
-                                    <div
-                                        key={idx}
-                                        className="absolute border-2 transition-all duration-75"
-                                        style={{
-                                            left: `${left}%`,
-                                            top: `${top}%`,
-                                            width: `${width}%`,
-                                            height: `${height}%`,
-                                            pointerEvents: 'none',
-                                            borderColor: color,
-                                            backgroundColor: `${color}33`,
-                                        }}
-                                    >
-                                        <span
-                                            className="absolute -top-6 left-0 text-white text-xs px-1 rounded"
-                                            style={{ backgroundColor: color }}
-                                        >
-                                            {det.class} {Math.round(det.confidence * 100)}%
-                                        </span>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={imgSrc} alt="captured" className="w-full h-full object-contain" />
-                    )}
-
-                    {/* Camera Controls Overlay */}
-                    <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 z-10">
+                    {/* Main Content Area */}
+                    <div className="flex-1 relative flex items-center justify-center bg-zinc-900">
                         {!imgSrc ? (
-                            <div className="flex gap-4">
-                                <button
-                                    onClick={isScanning ? stopScanning : startScanning}
-                                    className={`px-6 py-3 rounded-full font-semibold transition-all ${isScanning ? 'bg-red-500 text-white hover:bg-red-600' : 'bg-secondary text-white hover:bg-secondary/80'}`}
-                                >
-                                    {isScanning ? "Stop Scanning" : "Start Live Scan"}
-                                </button>
-                                <button
-                                    onClick={capture}
-                                    className="w-12 h-12 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
-                                    title="Capture Photo"
-                                >
-                                    <div className="w-10 h-10 rounded-full border-2 border-black" />
-                                </button>
-                            </div>
+                            isScanning ? (
+                                /* Camera Active State */
+                                <div className="relative w-full h-full flex items-center justify-center">
+                                    <Webcam
+                                        audio={false}
+                                        ref={webcamRef}
+                                        screenshotFormat="image/jpeg"
+                                        videoConstraints={videoConstraints}
+                                        style={{
+                                            width: "100%",
+                                            height: "100%",
+                                            objectFit: "contain",
+                                        }}
+                                        className="h-full w-full"
+                                    />
+
+                                    {/* Live Overlays - Scaled to match video aspect ratio (16:9) */}
+                                    <div className="absolute aspect-video w-full max-w-full h-auto max-h-full pointer-events-none">
+                                        {latestDetections.map((det, idx) => {
+                                            let left = 0, top = 0, width = 0, height = 0;
+
+                                            if (det.normalized_bbox) {
+                                                const [nx1, ny1, nx2, ny2] = det.normalized_bbox;
+                                                left = nx1 * 100;
+                                                top = ny1 * 100;
+                                                width = (nx2 - nx1) * 100;
+                                                height = (ny2 - ny1) * 100;
+                                            } else {
+                                                // Fallback for absolute coordinates (assuming 1280x720)
+                                                const [x1, y1, x2, y2] = det.bbox;
+                                                left = (x1 / 1280) * 100;
+                                                top = (y1 / 720) * 100;
+                                                width = ((x2 - x1) / 1280) * 100;
+                                                height = ((y2 - y1) / 720) * 100;
+                                            }
+
+                                            const color = getColorForClass(det.class);
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className="absolute border-2 transition-all duration-75"
+                                                    style={{
+                                                        left: `${left}%`,
+                                                        top: `${top}%`,
+                                                        width: `${width}%`,
+                                                        height: `${height}%`,
+                                                        borderColor: color,
+                                                        backgroundColor: `${color}33`,
+                                                    }}
+                                                >
+                                                    <span
+                                                        className="absolute -top-6 left-0 text-white text-xs px-1 rounded"
+                                                        style={{ backgroundColor: color }}
+                                                    >
+                                                        {det.class} {Math.round(det.confidence * 100)}%
+                                                    </span>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Camera Inactive State - Placeholder */
+                                <div className="flex flex-col items-center justify-center text-muted-foreground p-10 text-center animate-in fade-in">
+                                    <div className="w-20 h-20 bg-muted/20 rounded-full flex items-center justify-center mb-4">
+                                        <Camera className="w-10 h-10 opacity-50" />
+                                    </div>
+                                    <h3 className="text-xl font-semibold mb-2">Camera is Off</h3>
+                                    <p className="max-w-xs mx-auto mb-6">Click "Start Live Scan" to enable the camera and begin defect detection.</p>
+                                    <button
+                                        onClick={startScanning}
+                                        className="px-8 py-3 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 font-bold shadow-lg shadow-primary/25 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                    >
+                                        <Play className="w-5 h-5 fill-current" />
+                                        Start Live Scan
+                                    </button>
+                                </div>
+                            )
                         ) : (
-                            <div className="flex gap-4">
-                                <button
-                                    onClick={retake}
-                                    className="flex items-center gap-2 px-6 py-3 bg-secondary text-white rounded-full hover:bg-secondary/80 font-semibold"
-                                >
-                                    <RefreshCw className="w-4 h-4" />
-                                    Retake
-                                </button>
-                                <button
-                                    onClick={saveScan}
-                                    className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full hover:bg-blue-600 font-semibold shadow-lg shadow-blue-500/20"
-                                >
-                                    <Save className="w-4 h-4" />
-                                    Save to History
-                                </button>
-                            </div>
+                            // Capture Preview State
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={imgSrc} alt="captured" className="w-full h-full object-contain" />
                         )}
+                    </div>
+
+                    {/* Controls Bar (Bottom Overlay) */}
+                    <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-4 z-10 pointer-events-none">
+                        <div className="pointer-events-auto flex gap-4">
+                            {!imgSrc ? (
+                                isScanning && (
+                                    <>
+                                        <button
+                                            onClick={stopScanning}
+                                            className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-full hover:bg-red-600 font-bold shadow-lg transition-all"
+                                        >
+                                            <Square className="w-4 h-4 fill-current" />
+                                            Stop Scanning
+                                        </button>
+                                        <button
+                                            onClick={capture}
+                                            className="w-14 h-14 rounded-full bg-white border-4 border-zinc-200 flex items-center justify-center hover:scale-105 transition-transform shadow-xl hover:border-primary"
+                                            title="Capture Photo"
+                                        >
+                                            <div className="w-10 h-10 rounded-full bg-zinc-900 border-2 border-white" />
+                                        </button>
+                                    </>
+                                )
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={retake}
+                                        className="flex items-center gap-2 px-6 py-3 bg-secondary text-white rounded-full hover:bg-secondary/80 font-semibold shadow-lg backdrop-blur-sm"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                        Retake
+                                    </button>
+                                    <button
+                                        onClick={saveScan}
+                                        className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-full hover:bg-blue-600 font-semibold shadow-lg shadow-blue-500/20"
+                                    >
+                                        <Save className="w-4 h-4" />
+                                        Save to History
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {/* Live Log */}
-                <div className="lg:col-span-1 bg-card border border-border rounded-xl flex flex-col max-h-[600px]">
-                    <div className="p-4 border-b border-border">
-                        <h3 className="font-semibold">Live Analysis Log</h3>
-                        <p className="text-xs text-muted-foreground">Updates every 500ms</p>
+                <div className="lg:col-span-1 bg-card border border-border rounded-xl flex flex-col max-h-[600px] shadow-sm">
+                    <div className="p-4 border-b border-border flex justify-between items-center">
+                        <div>
+                            <h3 className="font-semibold">Live Analysis Log</h3>
+                            <p className="text-xs text-muted-foreground">Updates every 200ms</p>
+                        </div>
+                        {isScanning && (
+                            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" title="Receiving data" />
+                        )}
                     </div>
                     <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-                        {!isScanning && latestDetections.length === 0 ? (
+                        {!isScanning && !imgSrc ? (
+                            <div className="text-center text-sm text-muted-foreground py-10 flex flex-col items-center gap-3">
+                                <div className="w-12 h-12 rounded-full bg-secondary/50 flex items-center justify-center">
+                                    <Play className="w-5 h-5 opacity-50 ml-0.5" />
+                                </div>
+                                <p>Start scanning to see real-time events.</p>
+                            </div>
+                        ) : latestDetections.length === 0 ? (
                             <div className="text-center text-sm text-muted-foreground py-10">
-                                {isScanning ? "Scanning..." : "Start scanning to see real-time events."}
+                                <p>Scanning frame...</p>
+                                <p className="text-xs opacity-70 mt-1">No defects detected yet.</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -335,11 +369,11 @@ export default function CameraPage() {
                                     const color = getColorForClass(det.class);
                                     return (
                                         <div key={idx} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg border border-border animate-in fade-in slide-in-from-top-2">
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: color }} />
                                                 <span className="font-medium capitalize">{det.class}</span>
                                             </div>
-                                            <span className="text-xs bg-background px-2 py-1 rounded border border-border">
+                                            <span className="text-xs bg-background px-2 py-1 rounded border border-border font-mono">
                                                 {(det.confidence * 100).toFixed(0)}%
                                             </span>
                                         </div>
@@ -350,6 +384,6 @@ export default function CameraPage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     )
 }

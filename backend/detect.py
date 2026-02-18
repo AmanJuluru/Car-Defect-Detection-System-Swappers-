@@ -8,6 +8,7 @@ import os
 MODEL_PATH = "../model/defect_model.pt"
 try:
     model = YOLO(MODEL_PATH)
+
 except Exception as e:
     print(f"Error loading model from {MODEL_PATH}: {e}")
     model = None
@@ -28,14 +29,19 @@ def predict_image(image_bytes):
     for result in results:
         for box in result.boxes:
             b = box.xyxy[0].tolist() # x1, y1, x2, y2
+            bn = box.xyxyn[0].tolist() # x1, y1, x2, y2 (normalized)
             conf = float(box.conf)
             cls = int(box.cls)
             class_name = model.names[cls]
             
+            # Debug logging
+            # print(f"DEBUG: Detection - Class ID: {cls}, Label: {class_name}")
+
             detections.append({
                 "class": class_name,
                 "confidence": round(conf, 2),
-                "bbox": [round(x) for x in b]
+                "bbox": [round(x) for x in b],
+                "normalized_bbox": bn
             })
             
     return detections

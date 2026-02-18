@@ -66,7 +66,7 @@ export default function DashboardPage() {
         setLoading(true);
         try {
             const token = await user.getIdToken();
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
             const res = await fetch(`${apiBase}/history?limit=10`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -148,7 +148,7 @@ export default function DashboardPage() {
         setDeleting(true);
         try {
             const token = await user.getIdToken();
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
             const res = await fetch(`${apiBase}/history/${scan.id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },

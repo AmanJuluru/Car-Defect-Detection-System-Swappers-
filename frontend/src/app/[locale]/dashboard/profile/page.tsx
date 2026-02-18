@@ -30,7 +30,7 @@ export default function ProfilePage() {
 
                 // Fetch extended profile from backend
                 const token = await user.getIdToken();
-                const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+                const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
                 const res = await fetch(`${apiBase}/user/profile`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
@@ -75,7 +75,7 @@ export default function ProfilePage() {
                 formData.append("file", file);
             }
 
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
             const res = await fetch(`${apiBase}/user/update`, {
                 method: "POST",
                 headers: { Authorization: `Bearer ${token}` },

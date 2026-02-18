@@ -103,7 +103,8 @@ export default function UploadPage() {
             const formData = new FormData();
             formData.append("file", predictFile);
 
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/predict`, {
+            const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
+            const response = await fetch(`${apiUrl}/predict`, {
                 method: "POST",
                 body: formData,
             });
@@ -145,7 +146,8 @@ export default function UploadPage() {
             saveFormData.append("user_id", currentUser.uid);
             saveFormData.append("user_email", currentUser.email || "");
 
-            const saveResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/save_scan`, {
+            const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
+            const saveResponse = await fetch(`${apiUrl}/save_scan`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${idToken}`,

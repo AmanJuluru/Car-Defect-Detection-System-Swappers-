@@ -116,14 +116,18 @@ async def predict(file: UploadFile = File(...)):
     #      - If defects found -> ALLOW.
     #      - If no defects -> REJECT.
     
-    if not analysis["is_vehicle"]:
-        if analysis["has_forbidden"]:
-             raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
-            )
+    # Validation Logic for /predict:
+    # Prioritize showing defects if they exist, even if validation fails.
+    # This ensures live camera feed works even with people/backgrounds in frame.
+    
+    if not has_defects:
+        if not analysis["is_vehicle"]:
+            if analysis["has_forbidden"]:
+                 raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
+                )
             
-        if not has_defects:
             raise HTTPException(
                 status_code=400, 
                 detail="No vehicle detected. Please upload an image of an automobile (car, truck, bus, motorcycle)."
@@ -174,15 +178,18 @@ async def save_scan(
             pass
             
     # Validation Logic (Same as /predict)
-    if not analysis["is_vehicle"]:
-        if analysis["has_forbidden"]:
-             raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
-            )
+    # Validation Logic (Same as /predict)
+    # Only enforce strict checks if NO defects were found
+    if not has_defects:
+        if not analysis["is_vehicle"]:
+            if analysis["has_forbidden"]:
+                 raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid image. Detected {analysis['forbidden_label']}. Please upload a vehicle image."
+                )
             
-        if not has_defects:
-             raise HTTPException(
+            # If no forbidden object but also no vehicle and no defects -> Reject
+            raise HTTPException(
                 status_code=400, 
                 detail="No vehicle detected. Please upload an image of an automobile."
             )
@@ -551,3 +558,5 @@ if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 
+
+# Forced reload for update v3

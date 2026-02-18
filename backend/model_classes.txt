@@ -1,0 +1,1 @@
+{0: 'dent', 1: 'scratch', 2: 'lamp_broken', 3: 'glass_broken', 4: 'tire_flat'}
