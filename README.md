@@ -5,7 +5,7 @@
 
 An AI-powered web portal for automobile exterior defect detection using deep learning.
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Tech Stack](#tech-stack)
+[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Tech Stack](#tech-stack) • [Troubleshooting](#troubleshooting)
 
 ## 📖 Overview
 
@@ -28,10 +28,12 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
 | Defect Type | Visual Indicator |
 |:---|:---|
 | 🔴 **Scratch** | Red bounding box |
-| 🔵 **Lamp Broken** | Blue bounding box |
+| 🔵 **Lamp Broken** | Blue bounding box (Class 2) |
 | 🟢 **Glass Broken** | Green bounding box |
 | 🟣 **Tire Flat** | Purple bounding box |
-| 🩷 **Dent** | Pink bounding box |
+| 🩷 **Dent** | Pink bounding box (Class 0) |
+
+> **Note:** The validation logic prioritizes defects. If a defect is found (e.g., broken glass), the image is accepted even if "forbidden objects" (like a person or TV reflection) are also detected.
 
 ### 📸 Live Camera & Image Viewer
 - **Live Detection**: Real-time defect detection using your device's camera.
@@ -59,10 +61,9 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
 ### Prerequisites
 - **Python** 3.10 or higher
 - **Node.js** 18 or higher
-- **Firebase Project**: A Firebase project with Auth and Firestore enabled.
-- **Service Account**: `serviceAccountKey.json` placed in the `backend/` directory.
+- **Firebase Project**: A Firebase project with Auth and Firestore enabled. (See `firebase_config.py` for details)
 
-### Backend Setup
+### 1. Backend Setup
 
 1.  **Navigate to backend:**
     ```bash
@@ -75,15 +76,16 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
     ```
 
 3.  **Configure Environment:**
-    Ensure your `serviceAccountKey.json` is present in the `backend` folder.
+    - Place your `serviceAccountKey.json` from Firebase in the `backend/` directory.
+    - Alternatively, set the `FIREBASE_SERVICE_ACCOUNT_KEY` environment variable to the path of your key.
 
 4.  **Run the Server:**
     ```bash
     python main.py
     ```
-    The API will start at `http://localhost:8000`.
+    The API will start at `http://localhost:8000`. Verify it's running by visiting `http://localhost:8000/health`.
 
-### Frontend Setup
+### 2. Frontend Setup
 
 1.  **Navigate to frontend:**
     ```bash
@@ -95,7 +97,19 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
     npm install
     ```
 
-3.  **Run the Development Server:**
+3.  **Configure Environment:**
+    Create a `.env.local` file in the `frontend` directory with your Firebase config:
+    ```env
+    NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
+    NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_bucket.appspot.com
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+    NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+    ```
+
+4.  **Run the Development Server:**
     ```bash
     npm run dev
     ```
@@ -110,6 +124,22 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
 3.  **View Results**: See immediate results with bounding boxes. Click "Save to History" to store the record.
 4.  **Dashboard**: Monitor your inspection stats and recent history.
 5.  **Settings**: Update your profile, company info, and profile picture in **Settings**.
+
+---
+
+## 🔧 Troubleshooting
+
+### "Failed to fetch" Error
+- **Cause:** The frontend cannot reach the backend server.
+- **Solution:** Ensure the backend is running on port 8000 (`python main.py`) and that `NEXT_PUBLIC_API_URL` in `.env.local` is correct.
+
+### "Invalid image. Detected [Object]"
+- **Cause:** The image contains forbidden objects (e.g., people, animals, indoor items) and **no defects** were found.
+- **Solution:** Upload a clearer image of the vehicle. If real defects are present, the system will accept the image even if background objects are detected.
+
+### "Firestore Not Initialized"
+- **Cause:** The backend could not load `serviceAccountKey.json`.
+- **Solution:** Ensure the JSON key file is in the `backend/` folder and corresponds to the active Firebase project.
 
 ---
 
@@ -132,12 +162,6 @@ The pre-trained YOLO model can detect 5 types of automobile exterior defects:
 | **Tailwind CSS** | Modern styling |
 | **Recharts** | Data visualization |
 | **Framer Motion** | UI animations |
-
-### Database & Storage
-| Technology | Purpose |
-|:---|:---|
-| **Firestore** | NoSQL database for metadata |
-| **Local Storage** | Secure image storage (`backend/uploads`) |
 
 ---
 

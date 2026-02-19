@@ -1,0 +1,1 @@
+https://console.firebase.google.com/v1/r/project/car-defect-total/firestore/indexes?create_composite=ClBwcm9qZWN0cy9jYXItZGVmZWN0LXRvdGFsL2RhdGFiYXNlcy8oZGVmYXVsdCkvY29sbGVjdGlvbkdyb3Vwcy9oaXN0b3J5L2luZGV4ZXMvXxABGg4KCmNvbXBhbnlfaWQQARoNCgljcmVhdGVkQXQQAhoMCghfX25hbWVfXxAC

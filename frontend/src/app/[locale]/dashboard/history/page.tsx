@@ -221,6 +221,37 @@ export default function HistoryPage() {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex items-center justify-end gap-2">
                                             <button
+                                                onClick={async () => {
+                                                    try {
+                                                        const token = await user?.getIdToken();
+                                                        const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1").replace("localhost", "127.0.0.1");
+                                                        const res = await fetch(`${apiBase}/report/${item.id}`, {
+                                                            headers: { Authorization: `Bearer ${token}` }
+                                                        });
+                                                        if (res.ok) {
+                                                            const blob = await res.blob();
+                                                            const url = window.URL.createObjectURL(blob);
+                                                            const a = document.createElement('a');
+                                                            a.href = url;
+                                                            a.download = `Report_${item.id}.pdf`;
+                                                            document.body.appendChild(a);
+                                                            a.click();
+                                                            window.URL.revokeObjectURL(url);
+                                                            document.body.removeChild(a);
+                                                        } else {
+                                                            alert("Failed to download report");
+                                                        }
+                                                    } catch (e) {
+                                                        console.error(e);
+                                                        alert("Error downloading report");
+                                                    }
+                                                }}
+                                                className="text-primary hover:text-blue-400 font-medium text-xs uppercase tracking-wide flex items-center gap-1"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" /></svg>
+                                                PDF
+                                            </button>
+                                            <button
                                                 onClick={() => setSelectedItem(item)}
                                                 className="text-primary hover:text-blue-400 font-medium text-xs uppercase tracking-wide"
                                             >

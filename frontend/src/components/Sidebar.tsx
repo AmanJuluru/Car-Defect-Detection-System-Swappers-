@@ -35,6 +35,8 @@ const Sidebar = () => {
         { href: `${base}/dashboard/upload`, label: "Upload", icon: Upload },
         { href: `${base}/dashboard/camera`, label: "Camera", icon: Camera },
         { href: `${base}/dashboard/history`, label: "History", icon: History },
+        // Admin Link
+        ...(user?.role === "admin" ? [{ href: `${base}/admin/dashboard`, label: "Company Admin", icon: LayoutDashboard }] : []),
     ];
 
     const handleLogout = async () => {
@@ -88,6 +90,8 @@ const Sidebar = () => {
                 {user?.email && (
                     <div className="px-3 py-2 text-xs text-muted-foreground truncate">
                         Signed in as <span className="text-foreground font-medium">{user.email}</span>
+                        <br />
+                        <span className="text-[10px] opacity-70">Role: {user.role || 'none'}</span>
                     </div>
                 )}
                 <Link

@@ -14,6 +14,7 @@ export default function ProfilePage() {
     const [name, setName] = useState("");
     const [company, setCompany] = useState("");
     const [companyId, setCompanyId] = useState("");
+    const [role, setRole] = useState("employee"); // New Role State
     const [preview, setPreview] = useState<string | null>(null);
     const [file, setFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,6 +28,8 @@ export default function ProfilePage() {
                 // Initialize with auth data
                 setName(user.displayName || "");
                 setPreview(user.photoURL || null);
+                // @ts-ignore
+                if (user.role) setRole(user.role);
 
                 // Fetch extended profile from backend
                 const token = await user.getIdToken();
@@ -40,6 +43,7 @@ export default function ProfilePage() {
                     if (data.name) setName(data.name);
                     if (data.company) setCompany(data.company);
                     if (data.company_id) setCompanyId(data.company_id);
+                    if (data.role) setRole(data.role); // Fetch role
                     if (data.photo_url) setPreview(data.photo_url); // Prefer backend URL
                 }
             } catch (error) {
@@ -71,6 +75,7 @@ export default function ProfilePage() {
             formData.append("name", name);
             formData.append("company", company);
             formData.append("company_id", companyId);
+            formData.append("role", role); // Append Role
             if (file) {
                 formData.append("file", file);
             }
@@ -164,6 +169,47 @@ export default function ProfilePage() {
 
                 {/* Settings Form */}
                 <div className="lg:col-span-2 space-y-6">
+                    {/* Role Management (Dev/Demo Only) */}
+                    <div className="bg-card border border-border rounded-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <div className="p-4 border-b border-border bg-yellow-500/10 flex justify-between items-center">
+                            <h3 className="font-semibold flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                                <Shield className="w-4 h-4" />
+                                Role Management
+                            </h3>
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground bg-background/50 px-2 py-1 rounded">Dev Mode</span>
+                        </div>
+                        <div className="p-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="font-medium">Current Role</p>
+                                    <p className="text-sm text-muted-foreground pb-2">Toggle to switch between Employee and Admin views.</p>
+                                </div>
+                                <div className="flex items-center gap-2 bg-secondary p-1 rounded-lg">
+                                    <button
+                                        type="button"
+                                        onClick={() => setRole("employee")}
+                                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${role === "employee"
+                                            ? "bg-background text-foreground shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Employee
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setRole("admin")}
+                                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${role === "admin"
+                                            ? "bg-primary text-primary-foreground shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                            }`}
+                                    >
+                                        Admin
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="bg-card border border-border rounded-xl overflow-hidden">
                         <div className="p-4 border-b border-border bg-secondary/20">
                             <h3 className="font-semibold flex items-center gap-2">
@@ -249,7 +295,7 @@ export default function ProfilePage() {
                         </button>
                     </div>
                 </div>
-            </form>
-        </div>
+            </form >
+        </div >
     )
 }

@@ -201,6 +201,15 @@ async def save_scan(
     final_user_id = authed_uid
     final_user_email = authed_email or (user_email.strip() if user_email else "") or "guest@example.com"
 
+    # Fetch user profile to get company_id
+    user_company_id = None
+    try:
+        user_doc = db.collection("users").document(final_user_id).get()
+        if user_doc.exists:
+            user_company_id = user_doc.to_dict().get("company_id")
+    except Exception as e:
+        logger.warning(f"Failed to fetch user profile for company_id: {e}")
+
     # 1. Upload Image to Storage
     # 1. Save Image Locally
     try:
@@ -241,6 +250,7 @@ async def save_scan(
             "createdAt": current_time,  # Firestore Admin SDK accepts datetime objects
             "user_id": final_user_id,
             "user_email": final_user_email,
+            "company_id": user_company_id, # Store company_id
             "status": status,
             "defects": defect_count,
             "image_url": image_url,
@@ -387,6 +397,115 @@ async def get_history(
             },
         )
 
+@app.get("/api/v1/company/history")
+async def get_company_history(
+    limit: int = Query(default=50, ge=1, le=100),
+    defect_type: str | None = Query(default=None),
+    start_date: str | None = Query(default=None), # Format YYYY-MM-DD
+    end_date: str | None = Query(default=None),   # Format YYYY-MM-DD
+    target_user_id: str | None = Query(default=None, alias="user_id"),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Get history for the entire company.
+    Only accessible by users with role 'admin'.
+    Supports filtering by defect_type, date range, and specific user.
+    """
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    uid, _ = _require_user_from_bearer(authorization)
+
+    try:
+        # 1. Verify User is Admin and get Company ID
+        user_doc = db.collection("users").document(uid).get()
+        if not user_doc.exists:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        user_data = user_doc.to_dict()
+        if user_data.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Access denied. Admin role required.")
+        
+        company_id = user_data.get("company_id")
+        if not company_id:
+             raise HTTPException(status_code=400, detail="User is not associated with any company.")
+
+        # 2. Build Query
+        # Note: Complex queries in Firestore require composite indexes.
+        # We might need to filter in memory if indexes are missing and dataset is small,
+        # but for scalability, we should use indexes. For this MVP, we will try to filter 
+        # as much as possible in Firestore and handle edge cases.
+        
+        query = db.collection("history").where("company_id", "==", company_id)
+
+        # Apply filters
+        if target_user_id:
+            query = query.where("user_id", "==", target_user_id)
+        
+        # Date filtering needs to happen on 'createdAt' or 'date' field.
+        # 'createdAt' is a timestamp, 'date' is a string YYYY-MM-DD.
+        # String comparison works for ISO dates.
+        if start_date:
+            try:
+                # Convert string to datetime for comparison if using timestamp field, 
+                # or just string compare if using date field.
+                # Let's use the 'date' string field for simplicity if it exists and matches format
+                query = query.where("date", ">=", start_date)
+            except:
+                pass
+        
+        if end_date:
+             query = query.where("date", "<=", end_date)
+
+        # Ordering
+        query = query.order_by("createdAt", direction="DESCENDING")
+        query = query.limit(limit)
+
+        docs = query.stream()
+        items = []
+        
+        # Post-query filtering for defect_type (since array-contains might be needed or complex AND queries)
+        # If 'detections' is an array of objects, we can't easily filter by "detection inside array has label X"
+        # with simple queries unless we denormalized 'defect_types' into a top-level array.
+        # For now, valid defect types: "Dent", "Scratch", etc.
+        # We will filter in python for defect_type to avoid complex index requirements for now.
+        
+        for doc in docs:
+            data = doc.to_dict() or {}
+            
+            # Defect Type Filter (In-Memory)
+            if defect_type and defect_type != "All":
+                detections = data.get("detections", [])
+                # Check if any detection matches the requested type
+                has_defect = any(d.get("class") == defect_type or d.get("label") == defect_type for d in detections)
+                if not has_defect:
+                    continue
+
+            # Fetch user name if not present (optional optimization: cache user names)
+            # For now, just return what is in history. Frontend can fetch user details or we can join here.
+            # Let's add the 'user_name' if we can easily find it? 
+            # Actually, `save_scan` doesn't save user_name. 
+            # We can rely on frontend fetching user list or just displaying ID/Email.
+            
+            items.append({"id": doc.id, **_json_safe(data)})
+            
+        return {"history": items}
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Company history fetch error: {error_msg}", exc_info=True)
+        # Handle index errors
+        if "index" in error_msg.lower():
+             import re
+             url_match = re.search(r'https://console\.firebase\.google\.com[^\s]+', error_msg)
+             if url_match:
+                logger.info(f"Index needed: {url_match.group(0)}")
+                # Retrying without ordering/filtering might be a fallback, but for now just fail with info
+                raise HTTPException(status_code=400, detail=f"Database index required. Check backend logs.")
+        
+        raise HTTPException(status_code=500, detail=f"Failed to fetch company history: {error_msg}")
+
+
 @app.delete("/api/v1/history/{doc_id}")
 async def delete_history_item(
     doc_id: str,
@@ -417,12 +536,29 @@ async def delete_history_item(
         
         doc_data = doc.to_dict()
         
-        # Verify ownership
+        # Verify ownership or Admin privileges
         if doc_data.get("user_id") != uid:
-            raise HTTPException(
-                status_code=403,
-                detail={"error": "Forbidden", "message": "You can only delete your own reports."},
-            )
+            # Check if user is Admin of the same company
+            user_doc = db.collection("users").document(uid).get()
+            is_authorized = False
+            
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                if user_data.get("role") == "admin":
+                   # Check if company matches
+                   report_company = doc_data.get("company_id")
+                   admin_company = user_data.get("company_id")
+                   
+                   # Allow if both have company_id and they match
+                   # Or if admin has company_id but report doesn't (legacy/orphan) - stricter: require match
+                   if admin_company and report_company == admin_company:
+                       is_authorized = True
+            
+            if not is_authorized:
+                raise HTTPException(
+                    status_code=403,
+                    detail={"error": "Forbidden", "message": "You do not have permission to delete this report."},
+                )
         
         # Try to delete the image from storage if it exists
         # Try to delete the local image file if it exists
@@ -482,6 +618,7 @@ async def update_profile(
     name: str = Form(None),
     company: str = Form(None),
     company_id: str = Form(None),
+    role: str = Form(None), # Add role
     authorization: str | None = Header(default=None),
 ):
     if db is None:
@@ -503,6 +640,7 @@ async def update_profile(
         if name: update_data["name"] = name
         if company: update_data["company"] = company
         if company_id: update_data["company_id"] = company_id
+        if role: update_data["role"] = role # Allow updating role
 
         # Handle Profile Picture Upload
         if file:
@@ -553,6 +691,74 @@ async def get_profile(authorization: str | None = Header(default=None)):
     except Exception as e:
         logger.error(f"Get Profile Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch profile")
+
+from fastapi.responses import StreamingResponse
+from pdf_service import ReportGenerator
+
+@app.get("/api/v1/report/{scan_id}")
+async def generate_report(
+    scan_id: str,
+    authorization: str | None = Header(default=None),
+):
+    """
+    Generate and download a PDF report for a specific scan.
+    Accessible by the scan owner OR an Admin from the same company.
+    """
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    uid, _ = _require_user_from_bearer(authorization)
+
+    try:
+        # 1. Fetch Scan Data
+        doc_ref = db.collection("history").document(scan_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Report not found")
+            
+        scan_data = doc.to_dict()
+        scan_data['id'] = doc.id
+        
+        # 2. Access Control
+        # access if:
+        # a. User is the owner
+        # b. User is Admin AND same company
+        
+        is_owner = scan_data.get("user_id") == uid
+        
+        if not is_owner:
+            # Check if Admin of same company
+            user_doc = db.collection("users").document(uid).get()
+            if user_doc.exists:
+                user_data = user_doc.to_dict()
+                is_admin = user_data.get("role") == "admin"
+                same_company = user_data.get("company_id") == scan_data.get("company_id")
+                
+                if not (is_admin and same_company):
+                     raise HTTPException(status_code=403, detail="Access denied. You do not have permission to view this report.")
+            else:
+                 raise HTTPException(status_code=403, detail="Access denied.")
+
+        # 3. Generate PDF
+        generator = ReportGenerator()
+        pdf_buffer = generator.generate(scan_data)
+        
+        # 4. Return as File Download
+        filename = f"Inspection_Report_{scan_id[-6:]}.pdf"
+        
+        return StreamingResponse(
+            pdf_buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PDF Generation Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate report")
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
