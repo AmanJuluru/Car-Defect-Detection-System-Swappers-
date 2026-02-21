@@ -1,0 +1,88 @@
+# Project Overview: Swappers - AI Car Defect Detection System
+
+## 1. High-Level Description
+**Swappers** is an AI-powered web portal designed for the automobile industry to detect exterior vehicle defects automatically. It uses deep learning (YOLOv8) to analyze images in real-time, identifying issues like scratches, dents, broken glass, and flat tires. The system provides immediate visual feedback with bounding boxes and maintains a historical record of inspections for quality assurance and reporting.
+
+## 2. Technology Stack
+
+### Backend (API & Logic)
+*   **Language:** Python 3.10+
+*   **Framework:** FastAPI (High-performance async web framework)
+*   **AI/ML:** 
+    *   **YOLOv8** (Ultralytics) for object detection.
+    *   **OpenCV** for image processing.
+    *   **Google GenAI** (Gemini) for advanced content analysis (optional/integrated).
+*   **Database & Auth:** Firebase Admin SDK (Firestore for data, Auth for token verification).
+*   **Utilities:** `pdf_service` (ReportLab) for PDF generation, `uvicorn` for server hosting.
+
+### Frontend (User Interface)
+*   **Framework:** Next.js 16 (React framework)
+*   **Language:** TypeScript
+*   **Styling:** Tailwind CSS (Modern utility-first CSS)
+*   **State & UI Libraries:** 
+    *   `framer-motion` for animations.
+    *   `recharts` for data visualization/charts.
+    *   `lucide-react` for icons.
+    *   `react-webcam` for live camera feed.
+*   **Backend Integration:** Firebase Client SDK (Auth, Firestore).
+
+## 3. System Architecture & Connectivity
+
+The application follows a **Microservices Architecture** where the Frontend and Backend are decoupled but communicate via REST APIs.
+
+1.  **Frontend (Next.js)**: 
+    *   Runs on `http://localhost:3000`.
+    *   Handles User Interface, Camera input, Image Upload, and User Authentication (via Firebase Auth).
+    *   Sends API requests to the Backend (e.g., `POST /api/v1/predict`, `GET /api/v1/history`).
+    *   Passes the Firebase ID Token in the `Authorization: Bearer <token>` header for protected endpoints.
+
+2.  **Backend (FastAPI)**:
+    *   Runs on `http://localhost:8000`.
+    *   Exposes a REST API to process requests.
+    *   **Authentication Middleware**: Verifies the Firebase ID Token sent by the frontend using `firebase-admin`.
+    *   **AI Engine**: Receives images, runs them through the loaded YOLOv8 model (`detect.py`), and returns detection coordinates and labels.
+    *   **Storage**: 
+        *   **Images**: Saved locally to the server's disk in the `backend/uploads/` directory.
+        *   **Metadata**: Scan results (defect counts, timestamp, user ID, file path) are stored in **Google Cloud Firestore**.
+
+3.  **Database (Firestore)**:
+    *   Stores structured data: `users` (profiles, company info) and `history` (inspection logs).
+    *   Backend reads/writes to Firestore; Frontend uses it for auth state persistence.
+
+## 4. Key Features
+
+*   **Real-time Defect Detection**: Identifies 5 specific defect types:
+    *   🔴 Scratch
+    *   🩷 Dent
+    *   🔵 Lamp Broken
+    *   🟢 Glass Broken
+    *   🟣 Tire Flat
+*   **Live Camera Analysis**: Stream video from device camera for real-time inference.
+*   **Image Upload & Validation**: Drag-and-drop interface with validation to ensure images are actually vehicles.
+*   **Interactive Results**: Visual bounding boxes overlaid on images with confidence scores.
+*   **Dashboard & Analytics**: Charts showing defect frequency and recent activity.
+*   **Inspection History**: Searchable log of past scans with "View Report" functionality.
+*   **PDF Reporting**: Generate professional PDF reports for inspection records.
+*   **Role-Based Access**: 
+    *   **User**: Can scan and view their own history.
+    *   **Admin**: Can view history for the entire company.
+*   **Profile Management**: Update user details, company association, and profile picture.
+
+## 5. The "Total Thing": Workflow & Logic Flow
+
+1.  **Initial Access**: User lands on the site. If not logged in, they are redirected to the Login/Register page handled by Firebase Auth.
+2.  **Scanning (The Core Loop)**:
+    *   User goes to **Upload** or **Camera** page.
+    *   **Action**: User provides an image.
+    *   **Request**: Frontend sends image to `POST /api/v1/predict`.
+    *   **Processing**: Backend's `detect.py` runs YOLOv8. It also runs checks (is it a vehicle? are there forbidden objects?).
+    *   **Response**: JSON data with bounding box coordinates (x, y, width, height) and class labels.
+    *   **Visualization**: Frontend draws boxes on the image using the coordinate data.
+3.  **Saving Data**:
+    *   User clicks "Save Scan".
+    *   **Request**: Frontend sends image + detection JSON to `POST /api/v1/save_scan`.
+    *   **Storage**: Backend saves the physical file to `./uploads/` and creates a document in Firestore `history` collection with the image path and defect stats.
+4.  **Reviewing**:
+    *   User goes to **History** or **Dashboard**.
+    *   **Request**: `GET /api/v1/history`.
+    *   **Display**: List of past scans. User clicks one to see details or download a PDF report (`GET /api/v1/report/{id}`).
